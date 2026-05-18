@@ -1,0 +1,33 @@
+# Docker Compose for deploying the openpi policy server on a remote machine.
+# Unlike compose.yml, this uses the standalone image (code baked in, no source mounts).
+#
+# Usage:
+#   SERVER_ARGS="--env droid" docker compose -f scripts/docker/compose_remote.yml up --build
+#
+# The model weights are downloaded from GCS on first run and cached in OPENPI_DATA_HOME.
+# Set OPENPI_DATA_HOME to a persistent directory on the host to avoid re-downloading.
+
+services:
+  openpi_server:
+    image: openpi_server
+    build:
+      context: ../..
+      dockerfile: scripts/docker/serve_policy_standalone.Dockerfile
+    init: true
+    tty: true
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${OPENPI_DATA_HOME:-~/.cache/openpi}:/openpi_assets
+    environment:
+      - SERVER_ARGS
+      - OPENPI_DATA_HOME=/openpi_assets
+
+    # Remove this block if the remote machine has no GPU.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
