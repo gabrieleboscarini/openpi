@@ -22,7 +22,6 @@ import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from sensor_msgs.msg import Image, JointState
-from std_msgs.msg import Float64MultiArray
 
 from openpi_client import websocket_client_policy as _websocket_client_policy
 
@@ -32,7 +31,7 @@ from openpi_client import websocket_client_policy as _websocket_client_policy
 BASE_CAMERA_TOPIC = "/camera/color/image_raw"
 WRIST_CAMERA_TOPIC = "/wrist_camera/color/image_raw"
 JOINT_STATE_TOPIC = "/joint_states"
-ACTION_TOPIC = "/ur5e/joint_commands"
+ACTION_TOPIC = "joint_command"
 
 # UR5e joint names in the order they appear in /joint_states.
 UR5E_JOINT_NAMES = [
@@ -42,6 +41,8 @@ UR5E_JOINT_NAMES = [
     "wrist_1_joint",
     "wrist_2_joint",
     "wrist_3_joint",
+    "left_finger_joint",
+    "right_finger_joint",
 ]
 
 # Inference rate (Hz).
@@ -64,7 +65,7 @@ class UR5eOpenPIBridge(Node):
         self.create_subscription(Image, WRIST_CAMERA_TOPIC, self._wrist_image_cb, 10)
         self.create_subscription(JointState, JOINT_STATE_TOPIC, self._joint_state_cb, 10)
 
-        self._action_pub = self.create_publisher(Float64MultiArray, ACTION_TOPIC, 10)
+        self._action_pub = self.create_publisher(JointState, ACTION_TOPIC, 10)
 
         self.get_logger().info(f"Connecting to openpi server at {host}:{port} ...")
         self._policy = _websocket_client_policy.WebsocketClientPolicy(host=host, port=port)
@@ -90,7 +91,7 @@ class UR5eOpenPIBridge(Node):
         name_to_pos = dict(zip(msg.name, msg.position))
         positions = [name_to_pos.get(n, 0.0) for n in UR5E_JOINT_NAMES]
         with self._lock:
-            self._joint_positions = np.array(positions, dtype=np.float64)
+            self._joint_positions = np.array(positions, dtype=np.float64)  # (8,)
 
     # ------------------------------------------------------------------
     # Inference loop
@@ -115,13 +116,10 @@ class UR5eOpenPIBridge(Node):
                 else np.zeros((224, 224, 3), dtype=np.uint8)
             )
 
-            # DROID policy expects 7-DoF joint positions; UR5e has 6 — pad with 0.
-            joint_pos_7 = np.append(self._joint_positions, 0.0)
-
             obs = {
                 "observation/exterior_image_1_left": base_img,
                 "observation/wrist_image_left": wrist_img,
-                "observation/joint_position": joint_pos_7,
+                "observation/joint_position": self._joint_positions,
                 "observation/gripper_position": np.zeros(1, dtype=np.float64),
                 "prompt": self._prompt,
             }
@@ -137,9 +135,10 @@ class UR5eOpenPIBridge(Node):
         if actions.ndim > 1:
             actions = actions[0]
 
-        # Publish the first 6 values as UR5e joint position targets.
-        msg = Float64MultiArray()
-        msg.data = actions[:6].tolist()
+        msg = JointState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.name = UR5E_JOINT_NAMES
+        msg.position = actions[:8].tolist()
         self._action_pub.publish(msg)
 
 
