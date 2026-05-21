@@ -1,0 +1,34 @@
+# Docker Compose for deploying the openpi policy server for the UR5e example.
+# Runs on the remote GPU machine — the UR5e ROS2 client connects to it over the network.
+#
+# Usage (from the repo root):
+#   docker compose -f examples/ur5/compose.yml up --build
+#
+# The model weights are downloaded from GCS on first run and cached in OPENPI_DATA_HOME.
+# Set OPENPI_DATA_HOME to a persistent directory on the host to avoid re-downloading:
+#   OPENPI_DATA_HOME=/data/openpi docker compose -f examples/ur5/compose.yml up --build
+
+services:
+  openpi_server:
+    image: openpi_server_ur5
+    build:
+      context: ../..
+      dockerfile: scripts/docker/serve_policy_standalone.Dockerfile
+    init: true
+    tty: true
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${OPENPI_DATA_HOME:-~/.cache/openpi}:/openpi_assets
+    environment:
+      - SERVER_ARGS=--env droid
+      - OPENPI_DATA_HOME=/openpi_assets
+
+    # Remove this block if the remote machine has no GPU.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
