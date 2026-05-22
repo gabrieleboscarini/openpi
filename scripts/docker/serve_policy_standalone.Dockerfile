@@ -35,6 +35,9 @@ RUN GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-dev --no-install-project
 COPY src/ src/
 COPY scripts/ scripts/
 
+# Install the openpi project itself now that src/ is present.
+RUN GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-dev
+
 # Apply the transformers monkey-patches that the PyTorch models require.
 RUN /.venv/bin/python -c "import transformers; print(transformers.__file__)" \
     | xargs dirname \
@@ -44,4 +47,4 @@ ENV OPENPI_DATA_HOME=/openpi_assets
 
 EXPOSE 8000
 
-CMD /bin/bash -c "uv run scripts/serve_policy.py $SERVER_ARGS"
+CMD /bin/bash -c "/.venv/bin/python scripts/serve_policy.py $SERVER_ARGS"
