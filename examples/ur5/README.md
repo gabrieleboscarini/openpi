@@ -46,18 +46,18 @@ Clone the repo on the remote machine, then:
 
 ```bash
 cd openpi
-SERVER_ARGS="--env droid" ~/.docker/cli-plugins/docker-compose \
-    -f scripts/docker/compose.yml up openpi_server
+export SERVER_ARGS="--env DROID"
+docker compose -f scripts/docker/compose.yml up --build
 ```
 
 - Model weights (~11 GB) are downloaded from GCS on first run and cached in `~/.cache/openpi`.
-- Subsequent starts reuse the cache and are fast.
+- Subsequent starts reuse the cache and are fast (omit `--build` if the image is already built).
 - Wait for: `INFO:websockets.server:server listening on 0.0.0.0:8000`
 
 To run in the background, press `d` while the compose output is shown, or add `-d`:
 ```bash
-SERVER_ARGS="--env droid" ~/.docker/cli-plugins/docker-compose \
-    -f scripts/docker/compose.yml up -d openpi_server
+export SERVER_ARGS="--env DROID"
+docker compose -f scripts/docker/compose.yml up -d
 ```
 
 To stop:
