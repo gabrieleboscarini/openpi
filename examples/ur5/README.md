@@ -1,5 +1,112 @@
 # UR5 Example
 
+## Running the Policy Server with Docker (Remote GPU Machine)
+
+This section describes how to deploy the openpi policy server on a remote GPU machine using Docker and connect it to a ROS2 + Isaac Sim setup on a local machine.
+
+### Architecture
+
+```
+[Local machine]                          [Remote GPU machine]
+Isaac Sim  -->  ros2_isaac_sim_bridge.py  -->  openpi policy server (Docker)
+               (ROS2 topics)                   (WebSocket :8000)
+```
+
+### Prerequisites
+
+**Remote machine:**
+- Docker installed (rootless mode recommended — see [docs/docker.md](../../docs/docker.md))
+- NVIDIA Container Toolkit installed
+- Docker Compose V2: download the binary from GitHub if `docker compose` is not available:
+  ```bash
+  mkdir -p ~/.docker/cli-plugins
+  curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 \
+      -o ~/.docker/cli-plugins/docker-compose
+  chmod +x ~/.docker/cli-plugins/docker-compose
+  ```
+- Docker BuildKit (buildx): required for `serve_policy.Dockerfile`:
+  ```bash
+  curl -SL https://github.com/docker/buildx/releases/download/v0.12.1/buildx-v0.12.1.linux-amd64 \
+      -o ~/.docker/cli-plugins/docker-buildx
+  chmod +x ~/.docker/cli-plugins/docker-buildx
+  ```
+
+**Local machine:**
+- ROS2 Humble sourced in your shell
+- `openpi-client` installed:
+  ```bash
+  pip install packages/openpi-client/
+  pip install typing_extensions
+  ```
+- Isaac Sim running and publishing ROS2 topics
+
+### Step 1 — Build and start the policy server on the remote machine
+
+Clone the repo on the remote machine, then:
+
+```bash
+cd openpi
+SERVER_ARGS="--env droid" ~/.docker/cli-plugins/docker-compose \
+    -f scripts/docker/compose.yml up openpi_server
+```
+
+- Model weights (~11 GB) are downloaded from GCS on first run and cached in `~/.cache/openpi`.
+- Subsequent starts reuse the cache and are fast.
+- Wait for: `INFO:websockets.server:server listening on 0.0.0.0:8000`
+
+To run in the background, press `d` while the compose output is shown, or add `-d`:
+```bash
+SERVER_ARGS="--env droid" ~/.docker/cli-plugins/docker-compose \
+    -f scripts/docker/compose.yml up -d openpi_server
+```
+
+To stop:
+```bash
+docker stop <container_id>   # get id from: docker ps
+```
+
+### Step 2 — Open an SSH tunnel from the local machine
+
+If port 8000 is not directly reachable (common on cluster nodes), tunnel it over SSH:
+
+```bash
+ssh -L 8000:localhost:8000 <user>@<remote_ip>
+```
+
+Keep this terminal open while using the bridge.
+
+### Step 3 — Run the ROS2 bridge on the local machine
+
+Make sure Isaac Sim is publishing to the expected ROS2 topics, then:
+
+```bash
+cd openpi
+python3 examples/ur5/ros2_isaac_sim_bridge.py \
+    --host localhost \
+    --port 8000 \
+    --prompt "pick up the object"
+```
+
+Use `--host <remote_ip>` instead of `localhost` if port 8000 is directly reachable.
+
+The bridge subscribes to:
+| Topic | Type | Description |
+|---|---|---|
+| `/camera/color/image_raw` | `sensor_msgs/Image` | Base camera |
+| `/wrist_camera/color/image_raw` | `sensor_msgs/Image` | Wrist camera |
+| `/joint_states` | `sensor_msgs/JointState` | Current joint positions |
+
+And publishes to:
+| Topic | Type | Description |
+|---|---|---|
+| `joint_command` | `sensor_msgs/JointState` | Commanded joint positions |
+
+Joint order: `shoulder_pan`, `shoulder_lift`, `elbow`, `wrist_1`, `wrist_2`, `wrist_3`, `left_finger`, `right_finger`.
+
+---
+
+## Fine-tuning on UR5 Data
+
 Below we provide an outline of how to implement the key components mentioned in the "Finetune on your data" section of the [README](../README.md) for finetuning on UR5 datasets.
 
 First, we will define the `UR5Inputs` and `UR5Outputs` classes, which map the UR5 environment to the model and vice versa. Check the corresponding files in `src/openpi/policies/libero_policy.py` for comments explaining each line.
