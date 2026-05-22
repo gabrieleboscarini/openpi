@@ -26,7 +26,7 @@ ENV UV_PROJECT_ENVIRONMENT=/.venv
 RUN uv venv --python 3.11.9 $UV_PROJECT_ENVIRONMENT
 
 # Copy dependency manifests first so Docker can cache the install layer.
-COPY uv.lock pyproject.toml ./
+COPY uv.lock pyproject.toml LICENSE ./
 COPY packages/ packages/
 
 RUN GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-dev --no-install-project
