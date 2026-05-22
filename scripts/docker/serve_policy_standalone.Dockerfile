@@ -29,8 +29,7 @@ RUN uv venv --python 3.11.9 $UV_PROJECT_ENVIRONMENT
 COPY uv.lock pyproject.toml ./
 COPY packages/ packages/
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-dev
+RUN GIT_LFS_SKIP_SMUDGE=1 uv sync --frozen --no-dev
 
 # Copy source and scripts.
 COPY src/ src/
