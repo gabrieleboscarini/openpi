@@ -1029,7 +1029,7 @@ _CONFIGS = [
         num_train_steps=100,
         save_interval=100,
         log_interval=10,
-        wandb_enabled=False,
+        wandb_enabled=True,
         overwrite=True,
     ),
     # RoboArena & PolaRiS configs.
