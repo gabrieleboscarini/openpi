@@ -21,7 +21,7 @@ services:
     volumes:
       - ${OPENPI_DATA_HOME:-~/.cache/openpi}:/openpi_assets
     environment:
-      - SERVER_ARGS=--policy:checkpoint.config pi05_ur5 --policy:checkpoint.dir /openpi_assets/pi05_ur5_lora/checkpoints/3000
+      - SERVER_ARGS=policy:checkpoint --policy.config pi05_ur5 --policy.dir /openpi_assets/pi05_ur5_lora/checkpoints/3000
       - OPENPI_DATA_HOME=/openpi_assets
 
     # Remove this block if the remote machine has no GPU.
