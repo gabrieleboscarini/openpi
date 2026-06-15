@@ -89,6 +89,8 @@ def maybe_download(url: str, *, force_download: bool = False, **kwargs) -> pathl
                 # All other gs:// URLs (e.g. big_vision) continue to use gcsfs as normal.
                 if parsed.scheme == "gs" and parsed.netloc == "openpi-assets":
                     _download_gsutil(url, scratch_path, **kwargs)
+                elif parsed.scheme == "hf":
+                    _download_hf(url, scratch_path)
                 else:
                     _download_fsspec(url, scratch_path, **kwargs)
 
@@ -118,6 +120,33 @@ def _download_gsutil(url: str, local_path: pathlib.Path, **kwargs) -> None:
         ["gsutil", "-m", "cp", "-r", f"{url}/*", str(local_path)],
         check=True,
     )
+
+
+def _download_hf(url: str, local_path: pathlib.Path) -> None:
+    """Download a path from a HuggingFace Hub model repo.
+
+    URL format: hf://<owner>/<repo>/<path/within/repo>
+    Uses snapshot_download so files land directly on disk rather than
+    going through HF's internal symlink cache.
+    """
+    import tempfile
+
+    from huggingface_hub import snapshot_download
+
+    parsed = urllib.parse.urlparse(url)
+    # parsed.netloc = "owner", parsed.path = "/repo/optional/subpath"
+    path_parts = parsed.path.strip("/").split("/", 1)
+    repo_id = f"{parsed.netloc}/{path_parts[0]}"
+    subfolder = path_parts[1] if len(path_parts) > 1 else None
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=tmp_dir,
+            allow_patterns=[f"{subfolder}/**"] if subfolder else None,
+        )
+        src = pathlib.Path(tmp_dir) / subfolder if subfolder else pathlib.Path(tmp_dir)
+        shutil.copytree(str(src), str(local_path))
 
 
 def _download_fsspec(url: str, local_path: pathlib.Path, **kwargs) -> None:
