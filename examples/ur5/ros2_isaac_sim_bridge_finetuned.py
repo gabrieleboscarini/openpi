@@ -39,9 +39,9 @@ np.set_printoptions(precision=4, suppress=True)
 # ---------------------------------------------------------------------------
 # Topic names — adjust to match your Isaac Sim ROS2 bridge configuration.
 # ---------------------------------------------------------------------------
-LEFT_CAMERA_TOPIC = "/camera/color/image_raw"
-RIGHT_CAMERA_TOPIC = "/right_camera/color/image_raw"
-WRIST_CAMERA_TOPIC = "/wrist_camera/color/image_raw"
+LEFT_CAMERA_TOPIC = "/rgb_left"
+RIGHT_CAMERA_TOPIC = "/rgb_right"
+WRIST_CAMERA_TOPIC = "/rgb_wrist"
 JOINT_STATE_TOPIC = "/joint_states"
 ACTION_TOPIC = "joint_command"
 
@@ -63,7 +63,9 @@ EXECUTION_HZ = 30
 
 
 class UR5eFinetunedBridge(Node):
-    def __init__(self, host: str, port: int, prompt: str, right_camera_topic: str, debug: bool = False) -> None:
+    def __init__(self, host: str, port: int, prompt: str,
+                 left_camera_topic: str, right_camera_topic: str, wrist_camera_topic: str,
+                 debug: bool = False) -> None:
         super().__init__("ur5e_finetuned_bridge")
 
         self._bridge = CvBridge()
@@ -83,9 +85,9 @@ class UR5eFinetunedBridge(Node):
         self._action_chunk: np.ndarray | None = None
         self._chunk_index: int = 0
 
-        self.create_subscription(Image, LEFT_CAMERA_TOPIC, self._left_image_cb, 10)
+        self.create_subscription(Image, left_camera_topic, self._left_image_cb, 10)
         self.create_subscription(Image, right_camera_topic, self._right_image_cb, 10)
-        self.create_subscription(Image, WRIST_CAMERA_TOPIC, self._wrist_image_cb, 10)
+        self.create_subscription(Image, wrist_camera_topic, self._wrist_image_cb, 10)
         self.create_subscription(JointState, JOINT_STATE_TOPIC, self._joint_state_cb, 10)
 
         self._action_pub = self.create_publisher(JointState, ACTION_TOPIC, 10)
@@ -234,12 +236,12 @@ def main() -> None:
         default="pick up the red cube from the table",
         help="Language instruction (match training distribution, e.g. 'pick up the red cube from the table')",
     )
-    parser.add_argument(
-        "--right-camera-topic",
-        default=RIGHT_CAMERA_TOPIC,
-        help="ROS2 topic for the right exterior camera (defaults to /right_camera/color/image_raw; "
-             "falls back to left image if no messages arrive)",
-    )
+    parser.add_argument("--left-camera-topic", default=LEFT_CAMERA_TOPIC,
+                        help="ROS2 topic for the left/base camera")
+    parser.add_argument("--right-camera-topic", default=RIGHT_CAMERA_TOPIC,
+                        help="ROS2 topic for the right exterior camera (falls back to left if no messages arrive)")
+    parser.add_argument("--wrist-camera-topic", default=WRIST_CAMERA_TOPIC,
+                        help="ROS2 topic for the wrist camera")
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -252,7 +254,9 @@ def main() -> None:
         host=args.host,
         port=args.port,
         prompt=args.prompt,
+        left_camera_topic=args.left_camera_topic,
         right_camera_topic=args.right_camera_topic,
+        wrist_camera_topic=args.wrist_camera_topic,
         debug=args.debug,
     )
     try:
