@@ -14,7 +14,12 @@ The policy server must be started with:
 Run:
     python3 examples/ur5/ros2_isaac_sim_bridge_finetuned.py \
         --host localhost --port 8000 \
-        --prompt "pick up the object"
+        --prompt "pick up the red cube from the table"
+
+Two-rate control loop:
+  - INFERENCE_HZ (10 Hz): queries the policy server, stores the returned action chunk.
+  - EXECUTION_HZ (30 Hz): steps through the stored chunk one action at a time,
+    matching the 30 fps rate at which the training data was collected.
 """
 
 import argparse
@@ -50,8 +55,9 @@ UR5E_JOINT_NAMES = [
     "right_finger_joint",
 ]
 
-# Inference rate (Hz).
+# Policy server queries at 10 Hz; chunk execution replays at 30 Hz (training fps).
 INFERENCE_HZ = 10
+EXECUTION_HZ = 30
 
 
 class UR5eFinetunedBridge(Node):
@@ -68,6 +74,11 @@ class UR5eFinetunedBridge(Node):
         # 8-dim: [shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, left_finger, right_finger]
         self._joint_positions: np.ndarray | None = None
 
+        # Action chunk returned by the policy: shape (chunk_size, 7).
+        # Stepped through at EXECUTION_HZ; replaced at INFERENCE_HZ.
+        self._action_chunk: np.ndarray | None = None
+        self._chunk_index: int = 0
+
         self.create_subscription(Image, LEFT_CAMERA_TOPIC, self._left_image_cb, 10)
         self.create_subscription(Image, right_camera_topic, self._right_image_cb, 10)
         self.create_subscription(Image, WRIST_CAMERA_TOPIC, self._wrist_image_cb, 10)
@@ -79,6 +90,8 @@ class UR5eFinetunedBridge(Node):
         self._policy = _websocket_client_policy.WebsocketClientPolicy(host=host, port=port)
         self.get_logger().info(f"Connected. Metadata: {self._policy.get_server_metadata()}")
 
+        # Execution timer runs at 30 Hz, inference timer at 10 Hz.
+        self.create_timer(1.0 / EXECUTION_HZ, self._publish_action)
         self.create_timer(1.0 / INFERENCE_HZ, self._infer)
 
     # ------------------------------------------------------------------
@@ -107,7 +120,32 @@ class UR5eFinetunedBridge(Node):
             self._joint_positions = np.array(positions, dtype=np.float32)  # (8,)
 
     # ------------------------------------------------------------------
-    # Inference loop
+    # Execution loop (30 Hz) — publish one action from the stored chunk
+    # ------------------------------------------------------------------
+
+    def _publish_action(self) -> None:
+        with self._lock:
+            if self._action_chunk is None:
+                return
+            if self._chunk_index >= len(self._action_chunk):
+                # Chunk exhausted; hold the last action until the next inference.
+                action_7 = self._action_chunk[-1]
+            else:
+                action_7 = self._action_chunk[self._chunk_index]
+                self._chunk_index += 1
+
+        # Model returns 7-dim: [6 joints, gripper]. Map to 8 joint commands
+        # by applying the same gripper value to both finger joints.
+        joint_cmd = np.concatenate([action_7[:6], [action_7[6], action_7[6]]])
+
+        msg = JointState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.name = UR5E_JOINT_NAMES
+        msg.position = joint_cmd.tolist()
+        self._action_pub.publish(msg)
+
+    # ------------------------------------------------------------------
+    # Inference loop (10 Hz) — query server and refresh the action chunk
     # ------------------------------------------------------------------
 
     def _infer(self) -> None:
@@ -141,33 +179,35 @@ class UR5eFinetunedBridge(Node):
                 "prompt": self._prompt,
             }
 
+        # Policy inference happens outside the lock so image/joint callbacks
+        # can continue updating while we wait for the server response.
         try:
             result = self._policy.infer(obs)
         except Exception as exc:
             self.get_logger().error(f"Inference error: {exc}")
             return
 
-        # actions shape: (chunk_size, 7) or (7,) — take first step.
-        actions = np.asarray(result.get("actions", []))
-        if actions.ndim > 1:
-            actions = actions[0]
+        # actions shape: (chunk_size, 7)
+        actions = np.asarray(result.get("actions", []), dtype=np.float32)
+        if actions.ndim == 1:
+            actions = actions[np.newaxis, :]  # (1, 7)
 
-        # Model returns 7-dim: [6 joints, gripper]. Map to 8 joint commands
-        # by applying the same gripper value to both finger joints.
-        joint_cmd = np.concatenate([actions[:6], [actions[6], actions[6]]])
-
-        msg = JointState()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.name = UR5E_JOINT_NAMES
-        msg.position = joint_cmd.tolist()
-        self._action_pub.publish(msg)
+        with self._lock:
+            self._action_chunk = actions
+            # Start from index 1: delta[0] == 0 by training convention
+            # (action[t] == state[t] in the dataset), so skip it.
+            self._chunk_index = 1
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="UR5e fine-tuned pi05_ur5 ROS2 bridge")
     parser.add_argument("--host", default="localhost", help="openpi server IP or hostname")
     parser.add_argument("--port", type=int, default=8000, help="openpi server port")
-    parser.add_argument("--prompt", default="pick up the object", help="Language instruction")
+    parser.add_argument(
+        "--prompt",
+        default="pick up the red cube from the table",
+        help="Language instruction (match training distribution, e.g. 'pick up the red cube from the table')",
+    )
     parser.add_argument(
         "--right-camera-topic",
         default=RIGHT_CAMERA_TOPIC,
