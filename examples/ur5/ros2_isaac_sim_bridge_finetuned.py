@@ -34,6 +34,8 @@ from sensor_msgs.msg import Image, JointState
 
 from openpi_client import websocket_client_policy as _websocket_client_policy
 
+np.set_printoptions(precision=4, suppress=True)
+
 # ---------------------------------------------------------------------------
 # Topic names — adjust to match your Isaac Sim ROS2 bridge configuration.
 # ---------------------------------------------------------------------------
@@ -61,12 +63,14 @@ EXECUTION_HZ = 30
 
 
 class UR5eFinetunedBridge(Node):
-    def __init__(self, host: str, port: int, prompt: str, right_camera_topic: str) -> None:
+    def __init__(self, host: str, port: int, prompt: str, right_camera_topic: str, debug: bool = False) -> None:
         super().__init__("ur5e_finetuned_bridge")
 
         self._bridge = CvBridge()
         self._prompt = prompt
+        self._debug = debug
         self._lock = threading.Lock()
+        self._infer_count = 0
 
         self._left_image: np.ndarray | None = None
         self._right_image: np.ndarray | None = None
@@ -179,6 +183,19 @@ class UR5eFinetunedBridge(Node):
                 "prompt": self._prompt,
             }
 
+        self._infer_count += 1
+        n = self._infer_count
+
+        has_left  = obs["exterior_image_left"].any()
+        has_right = obs["exterior_image_right"].any()
+        has_wrist = obs["wrist_image"].any()
+        self.get_logger().info(
+            f"[infer #{n}] state={obs['state']}  "
+            f"cameras: left={'OK' if has_left else 'ZERO'} "
+            f"right={'OK' if has_right else 'ZERO'} "
+            f"wrist={'OK' if has_wrist else 'ZERO'}"
+        )
+
         # Policy inference happens outside the lock so image/joint callbacks
         # can continue updating while we wait for the server response.
         try:
@@ -191,6 +208,15 @@ class UR5eFinetunedBridge(Node):
         actions = np.asarray(result.get("actions", []), dtype=np.float32)
         if actions.ndim == 1:
             actions = actions[np.newaxis, :]  # (1, 7)
+
+        self.get_logger().info(
+            f"[infer #{n}] chunk shape={actions.shape}  "
+            f"actions[1]={actions[1] if len(actions) > 1 else actions[0]}  "
+            f"actions[5]={actions[5] if len(actions) > 5 else 'n/a'}  "
+            f"actions[-1]={actions[-1]}"
+        )
+        if self._debug:
+            self.get_logger().info(f"[infer #{n}] full chunk:\n{actions}")
 
         with self._lock:
             self._action_chunk = actions
@@ -214,6 +240,11 @@ def main() -> None:
         help="ROS2 topic for the right exterior camera (defaults to /right_camera/color/image_raw; "
              "falls back to left image if no messages arrive)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print full action chunk on every inference call",
+    )
     args, ros_args = parser.parse_known_args()
 
     rclpy.init(args=ros_args)
@@ -222,6 +253,7 @@ def main() -> None:
         port=args.port,
         prompt=args.prompt,
         right_camera_topic=args.right_camera_topic,
+        debug=args.debug,
     )
     try:
         rclpy.spin(node)
