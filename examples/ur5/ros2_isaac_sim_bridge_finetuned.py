@@ -144,9 +144,11 @@ class UR5eFinetunedBridge(Node):
                 action_7 = self._action_chunk[self._chunk_index]
                 self._chunk_index += 1
 
-        # Model returns 7-dim: [6 joints, gripper]. Map to 8 joint commands
-        # by applying the same gripper value to both finger joints.
-        joint_cmd = np.concatenate([action_7[:6], [action_7[6], action_7[6]]])
+        # Model returns 7-dim: [6 joints, gripper].
+        # Training convention: 1.0=open, 0.0=closed.
+        # Isaac Sim convention: 0.0=open, 1.0=closed  → invert.
+        gripper_cmd = 1.0 - float(action_7[6])
+        joint_cmd = np.concatenate([action_7[:6], [gripper_cmd, gripper_cmd]])
 
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
