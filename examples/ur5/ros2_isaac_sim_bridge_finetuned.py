@@ -79,6 +79,10 @@ class UR5eFinetunedBridge(Node):
         self._wrist_image: np.ndarray | None = None
         # 8-dim: [shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, left_finger, right_finger]
         self._joint_positions: np.ndarray | None = None
+        # Binary gripper state fed to the model: 1.0=open, 0.0=closed.
+        # Training default is 1.0 (open) at episode start; updated after each
+        # inference by thresholding the model's gripper output.
+        self._gripper_state: float = 1.0
 
         # Action chunk returned by the policy: shape (chunk_size, 7).
         # Stepped through at EXECUTION_HZ; replaced at INFERENCE_HZ.
@@ -173,9 +177,9 @@ class UR5eFinetunedBridge(Node):
                 else np.zeros((224, 224, 3), dtype=np.uint8)
             )
 
-            # State: 6 joint positions + gripper (average of two finger joints) = 7-dim.
-            gripper = float(self._joint_positions[6] + self._joint_positions[7]) / 2.0
-            state = np.concatenate([self._joint_positions[:6], [gripper]], dtype=np.float32)
+            # State: 6 joint positions + gripper (binary 1.0=open / 0.0=closed) = 7-dim.
+            # Training uses event-based binary gripper, not raw finger joint radians.
+            state = np.concatenate([self._joint_positions[:6], [self._gripper_state]], dtype=np.float32)
 
             obs = {
                 "exterior_image_left": left_img,
@@ -219,6 +223,12 @@ class UR5eFinetunedBridge(Node):
         )
         if self._debug:
             self.get_logger().info(f"[infer #{n}] full chunk:\n{actions}")
+
+        # Update binary gripper state from model output (threshold at 0.5).
+        # Use the middle of the chunk as a stable estimate.
+        mid = len(actions) // 2
+        self._gripper_state = 1.0 if float(actions[mid, 6]) >= 0.5 else 0.0
+        self.get_logger().info(f"[infer #{n}] gripper_state={self._gripper_state}  (raw mid={actions[mid, 6]:.3f})")
 
         with self._lock:
             self._action_chunk = actions
