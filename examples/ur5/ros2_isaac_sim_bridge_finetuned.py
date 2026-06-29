@@ -57,9 +57,9 @@ UR5E_JOINT_NAMES = [
     "right_finger_joint",
 ]
 
-# Policy server queries at 10 Hz; chunk execution replays at 30 Hz (training fps).
+# Policy server queries at 10 Hz; chunk execution replays at 60 Hz (matching physics rate).
 INFERENCE_HZ = 10
-EXECUTION_HZ = 30
+EXECUTION_HZ = 60
 
 
 class UR5eFinetunedBridge(Node):
@@ -79,10 +79,10 @@ class UR5eFinetunedBridge(Node):
         self._wrist_image: np.ndarray | None = None
         # 8-dim: [shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3, left_finger, right_finger]
         self._joint_positions: np.ndarray | None = None
-        # Binary gripper state fed to the model: 1.0=open, 0.0=closed.
+        # Binary gripper state fed to the model: 0.0=open, 1.0=closed.
         # Training default is 1.0 (open) at episode start; updated after each
         # inference by thresholding the model's gripper output.
-        self._gripper_state: float = 1.0
+        self._gripper_state: float = 0.0
 
         # Action chunk returned by the policy: shape (chunk_size, 7).
         # Stepped through at EXECUTION_HZ; replaced at INFERENCE_HZ.
@@ -100,7 +100,7 @@ class UR5eFinetunedBridge(Node):
         self._policy = _websocket_client_policy.WebsocketClientPolicy(host=host, port=port)
         self.get_logger().info(f"Connected. Metadata: {self._policy.get_server_metadata()}")
 
-        # Execution timer runs at 30 Hz, inference timer at 10 Hz.
+        # Execution timer runs at 60 Hz, inference timer at 10 Hz.
         self.create_timer(1.0 / EXECUTION_HZ, self._publish_action)
         self.create_timer(1.0 / INFERENCE_HZ, self._infer)
 
