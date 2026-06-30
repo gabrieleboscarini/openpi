@@ -112,15 +112,18 @@ class UR5eFinetunedBridge(Node):
     # ------------------------------------------------------------------
 
     def _step(self) -> None:
-        if self._joint_positions is None:
-            self.get_logger().info("Waiting for joint states...", throttle_duration_sec=5.0)
+
+        if self._joint_positions is None or self._left_image is None or self._wrist_image is None:
+            self.get_logger().info("Waiting for sensors...", throttle_duration_sec=5.0)
             return
 
         if self._chunk is None or self._tick // 2 >= len(self._chunk):
+
             left_img  = self._left_image  if self._left_image  is not None else np.zeros((224, 224, 3), dtype=np.uint8)
             right_img = self._right_image if self._right_image is not None else left_img
             wrist_img = self._wrist_image if self._wrist_image is not None else np.zeros((224, 224, 3), dtype=np.uint8)
             state = np.concatenate([self._joint_positions[:6], [self._gripper_state]], dtype=np.float32)
+
             obs = {
                 "exterior_image_left":  left_img,
                 "exterior_image_right": right_img,
@@ -128,6 +131,18 @@ class UR5eFinetunedBridge(Node):
                 "state":                state,
                 "prompt":               self._prompt,
             }
+
+            if self._left_image is None:
+                self.get_logger().warn("Left image is None")
+            else:
+                self.get_logger().info(
+                    f"Left image shape={self._left_image.shape}, "
+                    f"min={self._left_image.min()}, "
+                    f"max={self._left_image.max()}, "
+                    f"mean={self._left_image.mean():.2f}"
+                )
+
+            #inference of the VLA model
             try:
                 result = self._policy.infer(obs)
             except Exception as exc:
@@ -138,6 +153,7 @@ class UR5eFinetunedBridge(Node):
             if actions.ndim == 1:
                 actions = actions[np.newaxis, :]
 
+            #debug flag
             if self._save_images and not self._images_saved:
                 pathlib.Path("debug_images").mkdir(exist_ok=True)
                 cv2.imwrite("debug_images/left.png",  cv2.cvtColor(left_img,  cv2.COLOR_RGB2BGR))
@@ -146,6 +162,7 @@ class UR5eFinetunedBridge(Node):
                 self.get_logger().info("Saved debug images to debug_images/")
                 self._images_saved = True
 
+            #debug flag
             if self._debug:
                 self.get_logger().info(f"New chunk: shape={actions.shape}  actions[0]={actions[0]}  actions[-1]={actions[-1]}")
 
