@@ -19,7 +19,6 @@ Run:
 
 import argparse
 
-import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
@@ -92,13 +91,13 @@ class UR5eFinetunedBridge(Node):
     # ------------------------------------------------------------------
 
     def _left_image_cb(self, msg: Image) -> None:
-        self._left_image = cv2.resize(self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8"), (224, 224))
+        self._left_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
 
     def _right_image_cb(self, msg: Image) -> None:
-        self._right_image = cv2.resize(self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8"), (224, 224))
+        self._right_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
 
     def _wrist_image_cb(self, msg: Image) -> None:
-        self._wrist_image = cv2.resize(self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8"), (224, 224))
+        self._wrist_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
 
     def _joint_state_cb(self, msg: JointState) -> None:
         name_to_pos = dict(zip(msg.name, msg.position))
