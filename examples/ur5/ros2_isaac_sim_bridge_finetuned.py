@@ -18,7 +18,9 @@ Run:
 """
 
 import argparse
+import pathlib
 
+import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
@@ -52,12 +54,14 @@ EXECUTION_HZ = 60  # physics rate; each action held for 2 steps → 30 fps effec
 class UR5eFinetunedBridge(Node):
     def __init__(self, host: str, port: int, prompt: str,
                  left_camera_topic: str, right_camera_topic: str, wrist_camera_topic: str,
-                 debug: bool = False) -> None:
+                 debug: bool = False, save_images: bool = False) -> None:
         super().__init__("ur5e_finetuned_bridge")
 
         self._bridge = CvBridge()
         self._prompt = prompt
         self._debug = debug
+        self._save_images = save_images
+        self._images_saved = False
 
         self._left_image: np.ndarray | None = None
         self._right_image: np.ndarray | None = None
@@ -134,6 +138,14 @@ class UR5eFinetunedBridge(Node):
             if actions.ndim == 1:
                 actions = actions[np.newaxis, :]
 
+            if self._save_images and not self._images_saved:
+                pathlib.Path("debug_images").mkdir(exist_ok=True)
+                cv2.imwrite("debug_images/left.png",  cv2.cvtColor(left_img,  cv2.COLOR_RGB2BGR))
+                cv2.imwrite("debug_images/right.png", cv2.cvtColor(right_img, cv2.COLOR_RGB2BGR))
+                cv2.imwrite("debug_images/wrist.png", cv2.cvtColor(wrist_img, cv2.COLOR_RGB2BGR))
+                self.get_logger().info("Saved debug images to debug_images/")
+                self._images_saved = True
+
             if self._debug:
                 self.get_logger().info(f"New chunk: shape={actions.shape}  actions[0]={actions[0]}  actions[-1]={actions[-1]}")
 
@@ -165,6 +177,7 @@ def main() -> None:
     parser.add_argument("--right-camera-topic", default=RIGHT_CAMERA_TOPIC)
     parser.add_argument("--wrist-camera-topic", default=WRIST_CAMERA_TOPIC)
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--save-images", action="store_true", help="Save first inference images to debug_images/")
     args, ros_args = parser.parse_known_args()
 
     rclpy.init(args=ros_args)
@@ -176,6 +189,7 @@ def main() -> None:
         right_camera_topic=args.right_camera_topic,
         wrist_camera_topic=args.wrist_camera_topic,
         debug=args.debug,
+        save_images=args.save_images,
     )
     try:
         rclpy.spin(node)
