@@ -28,6 +28,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image, JointState
 
 from openpi_client import websocket_client_policy as _websocket_client_policy
+from openpi_client.image_tools import resize_with_pad
 
 np.set_printoptions(precision=4, suppress=True)
 
@@ -95,13 +96,13 @@ class UR5eFinetunedBridge(Node):
     # ------------------------------------------------------------------
 
     def _left_image_cb(self, msg: Image) -> None:
-        self._left_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
+        self._left_image = resize_with_pad(self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8"), 224, 224)
 
     def _right_image_cb(self, msg: Image) -> None:
-        self._right_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
+        self._right_image = resize_with_pad(self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8"), 224, 224)
 
     def _wrist_image_cb(self, msg: Image) -> None:
-        self._wrist_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8")
+        self._wrist_image = resize_with_pad(self._bridge.imgmsg_to_cv2(msg, desired_encoding="rgb8"), 224, 224)
 
     def _joint_state_cb(self, msg: JointState) -> None:
         name_to_pos = dict(zip(msg.name, msg.position))
