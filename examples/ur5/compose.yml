@@ -20,8 +20,9 @@ services:
       - "8000:8000"
     volumes:
       - ${OPENPI_DATA_HOME:-~/.cache/openpi}:/openpi_assets
+      - ${CHECKPOINT_DIR:-/tmp/no_checkpoint}:/checkpoint
     environment:
-      - SERVER_ARGS=policy:checkpoint --policy.config pi05_ur5 --policy.dir hf://gabbobosca/pi05_ur5_lora/checkpoints/29999
+      - SERVER_ARGS=policy:checkpoint --policy.config ${POLICY_CONFIG:-pi05_ur5} --policy.dir ${POLICY_DIR:-hf://gabbobosca/pi05_ur5_lora/checkpoints/29999}
       - OPENPI_DATA_HOME=/openpi_assets
       - HF_TOKEN=${HF_TOKEN}
 

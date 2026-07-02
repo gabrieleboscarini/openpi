@@ -62,7 +62,6 @@ class UR5eFinetunedBridge(Node):
         self._prompt = prompt
         self._debug = debug
         self._save_images = save_images
-        self._images_saved = False
 
         self._left_image: np.ndarray | None = None
         self._right_image: np.ndarray | None = None
@@ -123,7 +122,9 @@ class UR5eFinetunedBridge(Node):
             left_img  = self._left_image  if self._left_image  is not None else np.zeros((224, 224, 3), dtype=np.uint8)
             right_img = self._right_image if self._right_image is not None else left_img
             wrist_img = self._wrist_image if self._wrist_image is not None else np.zeros((224, 224, 3), dtype=np.uint8)
-            state = np.concatenate([self._joint_positions[:6], [self._gripper_state]], dtype=np.float32)
+            joints = self._joint_positions[:6].copy()
+            joints[4] = -np.pi / 2  # wrist_2 std=0 in norm_stats → snap to training mean
+            state = np.concatenate([joints, [self._gripper_state]], dtype=np.float32)
 
             obs = {
                 "exterior_image_left":  left_img,
@@ -154,14 +155,11 @@ class UR5eFinetunedBridge(Node):
             if actions.ndim == 1:
                 actions = actions[np.newaxis, :]
 
-            #debug flag
-            if self._save_images and not self._images_saved:
+            if self._save_images:
                 pathlib.Path("debug_images").mkdir(exist_ok=True)
                 cv2.imwrite("debug_images/left.png",  cv2.cvtColor(left_img,  cv2.COLOR_RGB2BGR))
                 cv2.imwrite("debug_images/right.png", cv2.cvtColor(right_img, cv2.COLOR_RGB2BGR))
                 cv2.imwrite("debug_images/wrist.png", cv2.cvtColor(wrist_img, cv2.COLOR_RGB2BGR))
-                self.get_logger().info("Saved debug images to debug_images/")
-                self._images_saved = True
 
             #debug flag
             if self._debug:

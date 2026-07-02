@@ -357,6 +357,39 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
 
 
 @dataclasses.dataclass(frozen=True)
+class LeRobotUR5AbsoluteDataConfig(DataConfigFactory):
+    """UR5 data config for checkpoints trained with absolute (non-delta) actions."""
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "exterior_image_left":  "exterior_image_left",
+                        "exterior_image_right": "exterior_image_right",
+                        "wrist_image":          "wrist_image",
+                        "state":                "state",
+                        "actions":              "actions",
+                        "prompt":               "prompt",
+                    }
+                )
+            ]
+        )
+        data_transforms = _transforms.Group(
+            inputs=[ur5_policy.UR5Inputs(model_type=model_config.model_type)],
+            outputs=[ur5_policy.UR5Outputs()],
+        )
+        model_transforms = ModelTransformFactory()(model_config)
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class LeRobotUR5DataConfig(DataConfigFactory):
     """Data config for UR5e pick-and-place datasets recorded with Isaac Sim."""
 
@@ -1013,6 +1046,28 @@ _CONFIGS = [
     #
     # UR5 fine-tuning config.
     #
+    TrainConfig(
+        name="pi05_ur5_absolute",
+        model=pi0_config.Pi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        data=LeRobotUR5AbsoluteDataConfig(
+            assets=AssetsConfig(
+                assets_dir="/checkpoint/assets/local",
+                asset_id="vla_test1.0",
+            ),
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+        ).get_freeze_filter(),
+        ema_decay=None,
+        batch_size=4,
+        num_train_steps=30_000,
+        save_interval=1_000,
+        log_interval=100,
+        wandb_enabled=False,
+        overwrite=True,
+    ),
     TrainConfig(
         name="pi05_ur5",
         model=pi0_config.Pi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
