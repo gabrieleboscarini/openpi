@@ -1047,6 +1047,25 @@ _CONFIGS = [
     # UR5 fine-tuning config.
     #
     TrainConfig(
+        name="pi05_ur5_pretrained",
+        model=pi0_config.Pi0Config(pi05=True),
+        data=LeRobotUR5AbsoluteDataConfig(
+            assets=AssetsConfig(
+                assets_dir="gs://openpi-assets/checkpoints/pi05_base/assets",
+                asset_id="ur5e",
+            ),
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        ema_decay=None,
+        batch_size=4,
+        num_train_steps=30_000,
+        save_interval=1_000,
+        log_interval=100,
+        wandb_enabled=False,
+        overwrite=True,
+    ),
+    TrainConfig(
         name="pi05_ur5_absolute",
         model=pi0_config.Pi0Config(pi05=True, paligemma_variant="gemma_2b", action_expert_variant="gemma_300m"),
         data=LeRobotUR5AbsoluteDataConfig(
