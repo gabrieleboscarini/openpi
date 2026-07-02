@@ -1048,7 +1048,7 @@ _CONFIGS = [
     #
     TrainConfig(
         name="pi05_ur5_absolute",
-        model=pi0_config.Pi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        model=pi0_config.Pi0Config(pi05=True, paligemma_variant="gemma_2b", action_expert_variant="gemma_300m"),
         data=LeRobotUR5AbsoluteDataConfig(
             assets=AssetsConfig(
                 assets_dir="/checkpoint/assets/local",
@@ -1057,9 +1057,6 @@ _CONFIGS = [
             base_config=DataConfig(prompt_from_task=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        freeze_filter=pi0_config.Pi0Config(
-            pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
-        ).get_freeze_filter(),
         ema_decay=None,
         batch_size=4,
         num_train_steps=30_000,
