@@ -55,11 +55,13 @@ EXECUTION_HZ = 60  # physics rate; each action held for 2 steps → 30 fps effec
 class UR5eFinetunedBridge(Node):
     def __init__(self, host: str, port: int, prompt: str,
                  left_camera_topic: str, right_camera_topic: str, wrist_camera_topic: str,
+                 exec_horizon: int = 16,
                  debug: bool = False, save_images: bool = False) -> None:
         super().__init__("ur5e_finetuned_bridge")
 
         self._bridge = CvBridge()
         self._prompt = prompt
+        self._exec_horizon = exec_horizon
         self._debug = debug
         self._save_images = save_images
 
@@ -117,7 +119,7 @@ class UR5eFinetunedBridge(Node):
             self.get_logger().info("Waiting for sensors...", throttle_duration_sec=5.0)
             return
 
-        if self._chunk is None or self._tick // 2 >= len(self._chunk):
+        if self._chunk is None or self._tick // 2 >= self._exec_horizon:
 
             left_img  = self._left_image  if self._left_image  is not None else np.zeros((224, 224, 3), dtype=np.uint8)
             right_img = self._right_image if self._right_image is not None else left_img
@@ -192,6 +194,8 @@ def main() -> None:
     parser.add_argument("--left-camera-topic",  default=LEFT_CAMERA_TOPIC)
     parser.add_argument("--right-camera-topic", default=RIGHT_CAMERA_TOPIC)
     parser.add_argument("--wrist-camera-topic", default=WRIST_CAMERA_TOPIC)
+    parser.add_argument("--exec-horizon", type=int, default=16,
+                        help="Number of actions to execute before re-querying the policy")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--save-images", action="store_true", help="Save first inference images to debug_images/")
     args, ros_args = parser.parse_known_args()
@@ -204,6 +208,7 @@ def main() -> None:
         left_camera_topic=args.left_camera_topic,
         right_camera_topic=args.right_camera_topic,
         wrist_camera_topic=args.wrist_camera_topic,
+        exec_horizon=args.exec_horizon,
         debug=args.debug,
         save_images=args.save_images,
     )
