@@ -1118,7 +1118,7 @@ _CONFIGS = [
         ).get_freeze_filter(),
         ema_decay=None,
         batch_size=4,
-        num_train_steps=10_000,
+        num_train_steps=3_000,
         save_interval=3_000,
         log_interval=100,
         wandb_enabled=True,
