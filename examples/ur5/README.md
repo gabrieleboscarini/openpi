@@ -1,62 +1,86 @@
 # UR5 Example
 
-## Running the Policy Server with Docker (Remote GPU Machine)
+## Running the Policy Server (Remote GPU Machine)
 
-This section describes how to deploy the openpi policy server on a remote GPU machine using Docker and connect it to a ROS2 + Isaac Sim setup on a local machine.
+This section describes how to serve a trained UR5 checkpoint (e.g. `pi05_ur5_cube`, fine-tuned via
+`src/openpi/training/config.py`) on a remote GPU machine, and connect it to a ROS2 + Isaac Sim setup
+on a local machine. Two ways to run the server are covered: directly with `uv` (simplest, no Docker
+needed if the machine already has your `openpi` checkout and env set up), or via Docker (better
+isolation, useful for machines you don't want to install project dependencies onto directly).
 
 ### Architecture
 
 ```
-[Local machine]                          [Remote GPU machine]
-Isaac Sim  -->  ros2_isaac_sim_bridge.py  -->  openpi policy server (Docker)
-               (ROS2 topics)                   (WebSocket :8000)
+[Local machine]                                    [Remote GPU machine]
+Isaac Sim  -->  ros2_isaac_sim_bridge_finetuned.py  -->  openpi policy server (uv or Docker)
+               (ROS2 topics)                             (WebSocket :8000)
 ```
 
 ### Prerequisites
 
 **Remote machine:**
-- Docker installed (rootless mode recommended — see [docs/docker.md](../../docs/docker.md))
-- NVIDIA Container Toolkit installed
-- Docker Compose V2: download the binary from GitHub if `docker compose` is not available:
-  ```bash
-  mkdir -p ~/.docker/cli-plugins
-  curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 \
-      -o ~/.docker/cli-plugins/docker-compose
-  chmod +x ~/.docker/cli-plugins/docker-compose
-  ```
-- Docker BuildKit (buildx): required for `serve_policy.Dockerfile`:
-  ```bash
-  curl -SL https://github.com/docker/buildx/releases/download/v0.12.1/buildx-v0.12.1.linux-amd64 \
-      -o ~/.docker/cli-plugins/docker-buildx
-  chmod +x ~/.docker/cli-plugins/docker-buildx
-  ```
+- A trained checkpoint under `checkpoints/<config_name>/<exp_name>/<step>/` (see the main
+  [README](../../README.md) for `compute_norm_stats.py` / `scripts/train.py` usage).
+- For the `uv` route: `uv` installed and the repo synced (`uv sync`).
+- For the Docker route: Docker installed (rootless mode recommended — see
+  [docs/docker.md](../../docs/docker.md)), NVIDIA Container Toolkit, Docker Compose V2, and BuildKit
+  (buildx) — see the commands below.
 
 **Local machine:**
 - ROS2 Humble sourced in your shell
-- `openpi-client` installed:
+- `openpi-client` available — either `uv run` from inside this repo, or standalone:
   ```bash
   pip install packages/openpi-client/
   pip install typing_extensions
   ```
 - Isaac Sim running and publishing ROS2 topics
 
-### Step 1 — Build and start the policy server on the remote machine
+### Step 1 — Start the policy server on the remote machine
 
-Clone the repo on the remote machine, then:
+Both options serve the exact same checkpoint; pick whichever fits your remote environment.
+
+#### Option A — via `uv` (native, no Docker)
 
 ```bash
 cd openpi
-export SERVER_ARGS="--env DROID"
+uv run scripts/serve_policy.py \
+    --port=8000 \
+    policy:checkpoint \
+    --policy.config=pi05_ur5_cube \
+    --policy.dir=checkpoints/pi05_ur5_cube/cube_run/2999
+```
+
+- `--policy.config` must match a `TrainConfig` name in `src/openpi/training/config.py`.
+- `--policy.dir` is the checkpoint directory to load (relative to the repo root, or absolute).
+- Note the top-level flags (`--port`) come **before** the `policy:checkpoint` subcommand — passing
+  them after will fail with `Unrecognized options`.
+- To keep it running after closing the SSH session:
+  ```bash
+  nohup uv run scripts/serve_policy.py --port=8000 policy:checkpoint \
+      --policy.config=pi05_ur5_cube \
+      --policy.dir=checkpoints/pi05_ur5_cube/cube_run/2999 \
+      > serve_policy.log 2>&1 &
+  disown
+  ```
+- Wait for: `INFO:websockets.server:server listening on 0.0.0.0:8000`
+- To stop: `pkill -f serve_policy.py`
+
+#### Option B — via Docker
+
+```bash
+cd openpi
+export SERVER_ARGS="--port=8000 policy:checkpoint --policy.config=pi05_ur5_cube --policy.dir=checkpoints/pi05_ur5_cube/cube_run/2999"
 docker compose -f scripts/docker/compose.yml up --build
 ```
 
-- Model weights (~11 GB) are downloaded from GCS on first run and cached in `~/.cache/openpi`.
-- Subsequent starts reuse the cache and are fast (omit `--build` if the image is already built).
-- Wait for: `INFO:websockets.server:server listening on 0.0.0.0:8000`
+`compose.yml` bind-mounts the repo root into `/app` in the container, so a `--policy.dir` path
+relative to the repo root (as above) resolves correctly without extra volume config. Model weights
+for the base checkpoint (~11 GB) are downloaded from GCS on first run and cached in `~/.cache/openpi`
+via the `OPENPI_DATA_HOME` volume; subsequent starts reuse the cache (omit `--build` once the image
+exists).
 
 To run in the background, press `d` while the compose output is shown, or add `-d`:
 ```bash
-export SERVER_ARGS="--env DROID"
 docker compose -f scripts/docker/compose.yml up -d
 ```
 
@@ -65,7 +89,19 @@ To stop:
 docker stop <container_id>   # get id from: docker ps
 ```
 
-### Step 2 — Open an SSH tunnel from the local machine
+One-time setup if `docker compose`/buildx aren't already available:
+```bash
+mkdir -p ~/.docker/cli-plugins
+curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 \
+    -o ~/.docker/cli-plugins/docker-compose
+chmod +x ~/.docker/cli-plugins/docker-compose
+
+curl -SL https://github.com/docker/buildx/releases/download/v0.12.1/buildx-v0.12.1.linux-amd64 \
+    -o ~/.docker/cli-plugins/docker-buildx
+chmod +x ~/.docker/cli-plugins/docker-buildx
+```
+
+### Step 2 — Open an SSH tunnel from the local machine (optional)
 
 If port 8000 is not directly reachable (common on cluster nodes), tunnel it over SSH:
 
@@ -73,35 +109,46 @@ If port 8000 is not directly reachable (common on cluster nodes), tunnel it over
 ssh -L 8000:localhost:8000 <user>@<remote_ip>
 ```
 
-Keep this terminal open while using the bridge.
+Keep this terminal open while using the bridge, and use `--host localhost` in Step 3. If the remote's
+port 8000 is directly reachable from the local machine (verify with `nc -zv <remote_ip> 8000`), skip
+the tunnel and use `--host <remote_ip>` directly.
 
 ### Step 3 — Run the ROS2 bridge on the local machine
 
-Make sure Isaac Sim is publishing to the expected ROS2 topics, then:
+Make sure Isaac Sim is publishing to the expected ROS2 topics, then run the bridge matching the
+observation format the checkpoint was trained on (fine-tuned pi05_ur5 models use
+`ros2_isaac_sim_bridge_finetuned.py`):
 
 ```bash
 cd openpi
-python3 examples/ur5/ros2_isaac_sim_bridge.py \
-    --host localhost \
+uv run examples/ur5/ros2_isaac_sim_bridge_finetuned.py \
+    --host <remote_ip_or_localhost> \
     --port 8000 \
-    --prompt "pick up the object"
+    --prompt "pick up the yellow cube from the table"
 ```
 
-Use `--host <remote_ip>` instead of `localhost` if port 8000 is directly reachable.
+(`python3 examples/ur5/ros2_isaac_sim_bridge_finetuned.py ...` works the same if you installed
+`openpi-client` standalone instead of using `uv run`.)
 
 The bridge subscribes to:
 | Topic | Type | Description |
 |---|---|---|
-| `/camera/color/image_raw` | `sensor_msgs/Image` | Base camera |
-| `/wrist_camera/color/image_raw` | `sensor_msgs/Image` | Wrist camera |
+| `/rgb_left` | `sensor_msgs/Image` | Left exterior camera |
+| `/rgb_right` | `sensor_msgs/Image` | Right exterior camera (falls back to left if not published) |
+| `/rgb_wrist` | `sensor_msgs/Image` | Wrist camera |
 | `/joint_states` | `sensor_msgs/JointState` | Current joint positions |
 
 And publishes to:
 | Topic | Type | Description |
 |---|---|---|
-| `joint_command` | `sensor_msgs/JointState` | Commanded joint positions |
+| `joint_command` | `sensor_msgs/JointState` | Commanded joint positions (absolute; the server converts the model's predicted deltas back to absolute using the state you publish — see `AbsoluteActions` in `src/openpi/transforms.py`) |
 
-Joint order: `shoulder_pan`, `shoulder_lift`, `elbow`, `wrist_1`, `wrist_2`, `wrist_3`, `left_finger`, `right_finger`.
+Joint order: `shoulder_pan_joint`, `shoulder_lift_joint`, `elbow_joint`, `wrist_1_joint`, `wrist_2_joint`, `wrist_3_joint`, plus the two gripper finger joints.
+
+Useful flags:
+- `--exec-horizon N` (default `16`) — how many actions from each predicted chunk to execute before re-querying the policy for a new one. Lower = more reactive/closed-loop, more server calls; higher = fewer calls, more open-loop.
+- `--debug` — logs each new action chunk's shape and first/last rows.
+- `--save-images` — dumps the first inference's camera frames to `debug_images/` for sanity-checking what the policy actually sees.
 
 ---
 
