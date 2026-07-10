@@ -55,7 +55,7 @@ EXECUTION_HZ = 60  # physics rate; each action held for 2 steps → 30 fps effec
 class UR5eFinetunedBridge(Node):
     def __init__(self, host: str, port: int, prompt: str,
                  left_camera_topic: str, right_camera_topic: str, wrist_camera_topic: str,
-                 exec_horizon: int = 16,
+                 exec_horizon: int = 15,
                  debug: bool = False, save_images: bool = False) -> None:
         super().__init__("ur5e_finetuned_bridge")
 
@@ -75,9 +75,10 @@ class UR5eFinetunedBridge(Node):
         self._chunk: np.ndarray | None = None
         self._tick: int = 0
 
-        # Binary gripper state fed to the model (1.0=open, 0.0=closed).
+        # Binary gripper state fed to the model (0.0=open, 1.0=closed),
+        # matching Isaac Sim's native finger-joint convention directly.
         # Initialized open, matching the episode-start convention in training data.
-        self._gripper_state: float = 1.0
+        self._gripper_state: float = 0.0
 
         self.create_subscription(Image, left_camera_topic, self._left_image_cb, 10)
         self.create_subscription(Image, right_camera_topic, self._right_image_cb, 10)
@@ -125,7 +126,6 @@ class UR5eFinetunedBridge(Node):
             right_img = self._right_image if self._right_image is not None else left_img
             wrist_img = self._wrist_image if self._wrist_image is not None else np.zeros((224, 224, 3), dtype=np.uint8)
             joints = self._joint_positions[:6].copy()
-            joints[4] = -np.pi / 2  # wrist_2 std=0 in norm_stats → snap to training mean
             state = np.concatenate([joints, [self._gripper_state]], dtype=np.float32)
 
             obs = {
@@ -175,8 +175,10 @@ class UR5eFinetunedBridge(Node):
 
         self._gripper_state = 1.0 if float(action_7[6]) >= 0.5 else 0.0
 
-        # Training: 1.0=open, 0.0=closed → Isaac Sim: 0.0=open, 1.0=closed → invert.
-        gripper_cmd = 1.0 - float(action_7[6])
+        # Training and Isaac Sim share the same convention (0.0=open, 1.0=closed)
+        # — no inversion needed. Fanned out to both finger joints, which move
+        # symmetrically on the OnRobot 2FG7.
+        gripper_cmd = float(action_7[6])
         joint_cmd = np.concatenate([action_7[:6], [gripper_cmd, gripper_cmd]])
 
         msg = JointState()
