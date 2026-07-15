@@ -1105,7 +1105,9 @@ _CONFIGS = [
     ),
     TrainConfig(
         name="pi05_ur5_cube",
-        model=pi0_config.Pi0Config(pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        model=pi0_config.Pi0Config(
+            pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora", action_horizon=16
+        ),
         # LeRobotUR5DataConfig converts absolute joint actions to delta actions for training
         # (delta_action_mask covers the 6 arm joints; gripper stays absolute).
         data=LeRobotUR5DataConfig(
