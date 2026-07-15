@@ -1109,7 +1109,7 @@ _CONFIGS = [
         # LeRobotUR5DataConfig converts absolute joint actions to delta actions for training
         # (delta_action_mask covers the 6 arm joints; gripper stays absolute).
         data=LeRobotUR5DataConfig(
-            repo_id="gabbobosca/dataset_cube",
+            repo_id="gabbobosca/dataset_cube_150",
             base_config=DataConfig(prompt_from_task=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
