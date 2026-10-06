@@ -29,6 +29,7 @@ import openpi.training.optimizer as _optimizer
 import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
 import openpi.policies.ur5_policy as ur5_policy
+import openpi.policies.panda_policy as panda_policy
 
 ModelType: TypeAlias = _model.ModelType
 # Work around a tyro issue with using nnx.filterlib.Filter directly.
@@ -418,6 +419,51 @@ class LeRobotUR5DataConfig(DataConfigFactory):
 
         # Convert absolute joint actions to delta actions; keep gripper (dim 7) absolute.
         delta_action_mask = _transforms.make_bool_mask(6, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotPandaDataConfig(DataConfigFactory):
+    """Data config for Franka Panda datasets recorded in Isaac Sim with ter_grasp."""
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        # Dataset keys are used directly — no renaming needed.
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "exterior_image_left":  "exterior_image_left",
+                        "exterior_image_right": "exterior_image_right",
+                        "wrist_image":          "wrist_image",
+                        "state":                "state",
+                        "actions":              "actions",
+                        "prompt":               "prompt",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[panda_policy.PandaInputs(model_type=model_config.model_type)],
+            outputs=[panda_policy.PandaOutputs()],
+        )
+
+        # ter_grasp actions are absolute joint targets (actions[t] = state[t+1]): convert the
+        # 7 arm joints to deltas w.r.t. the current state; keep the gripper (dim 8) absolute.
+        delta_action_mask = _transforms.make_bool_mask(7, -1)
         data_transforms = data_transforms.push(
             inputs=[_transforms.DeltaActions(delta_action_mask)],
             outputs=[_transforms.AbsoluteActions(delta_action_mask)],
@@ -1125,6 +1171,36 @@ _CONFIGS = [
         log_interval=100,
         wandb_enabled=True,
         overwrite=True,
+    ),
+    #
+    # Franka Panda (ter_grasp, Isaac Sim) full fine-tuning config.
+    #
+    TrainConfig(
+        name="pi05_panda_full",
+        # Full fine-tuning: no LoRA variants, no freeze_filter -> every weight is trained.
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=16),
+        data=LeRobotPandaDataConfig(
+            # TODO: set to the converted ter_grasp Panda dataset.
+            repo_id="your_hf_username/franka_panda_ter_grasp",
+            base_config=DataConfig(prompt_from_task=True),
+            # No AssetsConfig: norm stats must be computed on this dataset
+            # (uv run scripts/compute_norm_stats.py --config-name pi05_panda_full),
+            # since they are taken over the *delta* joint actions.
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=30_000,
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.999,
+        batch_size=64,
+        num_train_steps=30_000,
+        save_interval=5_000,
+        keep_period=10_000,
+        log_interval=100,
     ),
     # RoboArena & PolaRiS configs.
     *roboarena_config.get_roboarena_configs(),
