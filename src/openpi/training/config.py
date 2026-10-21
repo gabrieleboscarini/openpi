@@ -461,8 +461,8 @@ class LeRobotPandaDataConfig(DataConfigFactory):
             outputs=[panda_policy.PandaOutputs()],
         )
 
-        # ter_grasp actions are absolute joint targets (actions[t] = state[t+1]): convert the
-        # 7 arm joints to deltas w.r.t. the current state; keep the gripper (dim 8) absolute.
+        # ter_grasp actions are absolute next-frame joint targets: convert the 7 arm joints to
+        # deltas w.r.t. the current state; keep the gripper (dim 8, closedness) absolute.
         delta_action_mask = _transforms.make_bool_mask(7, -1)
         data_transforms = data_transforms.push(
             inputs=[_transforms.DeltaActions(delta_action_mask)],
