@@ -4,8 +4,9 @@ Dataset (LeRobot, written by ter_grasp/convert_to_lerobot.py, 30 fps):
   exterior_image_left  : back-left exterior camera
   exterior_image_right : back-right exterior camera
   wrist_image          : camera on the Franka Hand
-  state                : [q1..q7 (rad), gripper]  -- q = commanded or measured joint positions
-  actions              : [q1..q7 (rad), gripper]  -- absolute, next-frame commanded joint targets
+  state                : [q1..q7 (rad), gripper]  -- measured: joint positions + jaw closedness (0..1)
+  actions              : [q1..q7 (rad), gripper]  -- absolute: next-frame commanded joint targets
+                                                     + gripper command (0/1)
 
 The gripper channel is *closedness* (0 = open, 1 = closed) in the dataset, in the model and
 on the robot: the same convention as the pi pre-training data (DROID, Franka), so it passes
