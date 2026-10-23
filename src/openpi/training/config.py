@@ -440,17 +440,19 @@ class LeRobotPandaDataConfig(DataConfigFactory):
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-        # Dataset keys are used directly — no renaming needed.
+        # Training only (the policy server applies no repack): rename the dataset keys to the
+        # `observation/...` keys the ter_grasp clients send, so PandaInputs sees the same keys
+        # in training and at inference.
         repack_transform = _transforms.Group(
             inputs=[
                 _transforms.RepackTransform(
                     {
-                        "exterior_image_left":  "exterior_image_left",
-                        "exterior_image_right": "exterior_image_right",
-                        "wrist_image":          "wrist_image",
-                        "state":                "state",
-                        "actions":              "actions",
-                        "prompt":               "prompt",
+                        "observation/exterior_image_left":  "exterior_image_left",
+                        "observation/exterior_image_right": "exterior_image_right",
+                        "observation/wrist_image":          "wrist_image",
+                        "observation/state":                "state",
+                        "actions":                          "actions",
+                        "prompt":                           "prompt",
                     }
                 )
             ]

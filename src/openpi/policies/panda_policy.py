@@ -8,6 +8,9 @@ Dataset (LeRobot, written by ter_grasp/convert_to_lerobot.py, 30 fps):
   actions              : [q1..q7 (rad), gripper]  -- absolute: next-frame commanded joint targets
                                                      + gripper command (0/1)
 
+PandaInputs reads the `observation/...` keys the ter_grasp clients send (policy_rollout.py,
+smoke_client.py); in training, LeRobotPandaDataConfig repacks the dataset keys to them.
+
 The gripper channel is *closedness* (0 = open, 1 = closed) in the dataset, in the model and
 on the robot: the same convention as the pi pre-training data (DROID, Franka), so it passes
 through unchanged.  Datasets converted before ter_grasp switched to this convention store
@@ -40,12 +43,12 @@ class PandaInputs(transforms.DataTransformFn):
     model_type: _model.ModelType = _model.ModelType.PI0
 
     def __call__(self, data: dict) -> dict:
-        left_image = _parse_image(data["exterior_image_left"])
-        right_image = _parse_image(data["exterior_image_right"])
-        wrist_image = _parse_image(data["wrist_image"])
+        left_image = _parse_image(data["observation/exterior_image_left"])
+        right_image = _parse_image(data["observation/exterior_image_right"])
+        wrist_image = _parse_image(data["observation/wrist_image"])
 
         inputs = {
-            "state": np.asarray(data["state"]),
+            "state": np.asarray(data["observation/state"]),
             "image": {
                 "base_0_rgb": left_image,
                 "left_wrist_0_rgb": wrist_image,
