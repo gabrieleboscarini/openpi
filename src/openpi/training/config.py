@@ -1213,8 +1213,7 @@ _CONFIGS = [
             pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora", action_horizon=16
         ),
         data=LeRobotPandaDataConfig(
-            # TODO: set to the converted ter_grasp Panda dataset (same as pi05_panda_full).
-            repo_id="your_hf_username/franka_panda_ter_grasp",
+            repo_id="gabbobosca/ter_grasp_d2_cams2_train",
             base_config=DataConfig(prompt_from_task=True),
             # Norm stats over the delta joint actions of this dataset
             # (uv run scripts/compute_norm_stats.py --config-name pi05_panda_lora).
