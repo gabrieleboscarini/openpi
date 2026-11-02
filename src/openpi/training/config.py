@@ -1206,6 +1206,31 @@ _CONFIGS = [
         keep_period=1_000,
         log_interval=100,
     ),
+    TrainConfig(
+        name="pi05_panda_lora",
+        # LoRA fine-tuning of pi05-DROID: only the LoRA adapters (and non-LLM weights) are trained.
+        model=pi0_config.Pi0Config(
+            pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora", action_horizon=16
+        ),
+        data=LeRobotPandaDataConfig(
+            # TODO: set to the converted ter_grasp Panda dataset (same as pi05_panda_full).
+            repo_id="your_hf_username/franka_panda_ter_grasp",
+            base_config=DataConfig(prompt_from_task=True),
+            # Norm stats over the delta joint actions of this dataset
+            # (uv run scripts/compute_norm_stats.py --config-name pi05_panda_lora).
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_droid/params"),
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True, paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora", action_horizon=16
+        ).get_freeze_filter(),
+        # EMA is not used with LoRA fine-tuning.
+        ema_decay=None,
+        batch_size=32,
+        num_train_steps=15_000,
+        save_interval=1_000,
+        keep_period=1_000,
+        log_interval=100,
+    ),
     # RoboArena & PolaRiS configs.
     *roboarena_config.get_roboarena_configs(),
     *polaris_config.get_polaris_configs(),
