@@ -1193,15 +1193,17 @@ _CONFIGS = [
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=1_000,
             peak_lr=5e-5,
-            decay_steps=30_000,
+            decay_steps=15_000,
             decay_lr=5e-6,
         ),
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
         ema_decay=0.999,
-        batch_size=64,
-        num_train_steps=30_000,
-        save_interval=5_000,
-        keep_period=10_000,
+        # ~3.6 passes over a ~130k-frame ter_grasp dataset; earlier runs on this task reached
+        # their val-loss minimum at 6k-11k steps, so keep every 1k checkpoint and pick by val loss.
+        batch_size=32,
+        num_train_steps=15_000,
+        save_interval=1_000,
+        keep_period=1_000,
         log_interval=100,
     ),
     # RoboArena & PolaRiS configs.
